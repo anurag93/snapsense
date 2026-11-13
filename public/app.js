@@ -3,6 +3,8 @@ const $ = (sel, el = document) => el.querySelector(sel);
 const app = $('#app');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+// In-video checkpoint questions are off: understanding is measured by the same quiz before and after the video.
+const IN_VIDEO_CHECKPOINTS = false;
 const SUBJECT_EMOJI = { Biology: '🧬', Physics: '🛹', History: '🏛️', Math: '📐', Economics: '📈', 'Earth Science': '🌍', Chemistry: '⚗️', General: '💡' };
 
 let state = { user: localStorage.getItem('cr-user') || 'Maya', info: null };
@@ -372,7 +374,7 @@ async function renderSearch(q, photoId) {
           <div class="vtitle">${esc(v.title)}</div>
           <div class="why">${esc(v.summary)}</div>
           ${v.matched && v.matched.length ? `<div class="matched">Shared concepts: ${v.matched.map(([a, b]) => `<span class="cchip">${esc(a === b ? a : `${a} ≈ ${b}`)}</span>`).join('')}</div>` : ''}
-          <div class="vmeta" style="margin-top:4px"><span>${esc(v.subject)} · Grades ${esc(v.gradeBand)}</span>${v.checkpoints ? `<span>✅ ${v.checkpoints} checkpoint${v.checkpoints === 1 ? '' : 's'}</span>` : ''}<span>${v.stats.views} views</span><span>${v.quality.breakdown.quiz}% quiz accuracy</span><span>${v.quality.breakdown.completion}% finish it</span></div>
+          <div class="vmeta" style="margin-top:4px"><span>${esc(v.subject)} · Grades ${esc(v.gradeBand)}</span>${IN_VIDEO_CHECKPOINTS && v.checkpoints ? `<span>✅ ${v.checkpoints} checkpoint${v.checkpoints === 1 ? '' : 's'}</span>` : ''}<span>${v.stats.views} views</span><span>${v.quality.breakdown.quiz}% quiz accuracy</span><span>${v.quality.breakdown.completion}% finish it</span></div>
         </div>
         <div class="go"><button class="btn soft">Watch · <span class="free">free</span></button></div>
       </div>`).join('')}
@@ -470,7 +472,9 @@ async function renderWatch(id) {
   const u0 = state.info.user;
   const userBand = u0.gradeBand || '';
   const refresher = userBand && v.gradeBand && v.gradeBand !== userBand && v.gradeBand < userBand ? ` refresher for Grade ${esc(u0.grade)}` : '';
-  const nCp = v.scenes.filter((s) => s.checkpoint).length;
+  const nCp = IN_VIDEO_CHECKPOINTS ? v.scenes.filter((s) => s.checkpoint).length : 0;
+  // One question set, used for the warm-up before the video and the quiz after it.
+  const QS = (v.quiz || []).length ? v.quiz : v.scenes.filter((s) => s.checkpoint).map((s) => s.checkpoint);
   const savedKey = `cr-saved-${state.user}`;
   const isSaved = () => (JSON.parse(localStorage.getItem(savedKey) || '[]')).includes(id);
   const short = (h) => (h.length > 16 ? h.split(/[\s:,]+/).slice(0, 2).join(' ') : h);
@@ -507,7 +511,7 @@ async function renderWatch(id) {
             <span class="time" id="time">0:00 / ${fmt(total)}</span>
             <button class="ctl" id="cc" aria-pressed="true">CC on</button>
             <button class="ctl" id="speed" aria-label="Playback speed 1×">Speed 1×</button>
-            <button class="ctl" id="mute" aria-pressed="true">Sound on</button>
+            <button class="ctl" id="mute" aria-pressed="true">🔊 Sound on</button>
             <button class="ctl" id="fs">Full screen</button>
           </div>
         </section>
@@ -595,7 +599,7 @@ async function renderWatch(id) {
   api(`/api/videos/${id}/event`, { body: { type: 'view' } }).then((r) => renderTokens(r.user)).catch(() => {});
 
   const p = (player = { t: 0, playing: false, scene: -1, muted: localStorage.getItem('cr-muted') === '1', sel: null, completed: false, last: 0, speaking: false, cpDone: {}, speed: 1, cc: true, ad: false });
-  const setMute = () => { $('#mute').textContent = p.muted ? 'Sound off' : 'Sound on'; $('#mute').setAttribute('aria-pressed', String(!p.muted)); };
+  const setMute = () => { $('#mute').textContent = p.muted ? '🔇 Sound off' : '🔊 Sound on'; $('#mute').setAttribute('aria-pressed', String(!p.muted)); };
   setMute();
   // Audio description: also read out what is on screen.
   const describe = (vis) => {
@@ -613,14 +617,22 @@ async function renderWatch(id) {
   const sceneAt = (t) => { let i = 0; while (i < starts.length - 1 && t >= starts[i + 1]) i++; return i; };
   function speak(text) {
     if (p.muted || !('speechSynthesis' in window)) return;
-    speechSynthesis.cancel();
+    const synth = window.speechSynthesis;
+    synth.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.rate = 1.02 * p.speed;
-    const voice = speechSynthesis.getVoices().find((vv) => /en(-|_)/i.test(vv.lang) && /Google|Natural|Samantha|Daniel/i.test(vv.name)) || speechSynthesis.getVoices().find((vv) => /^en/i.test(vv.lang));
+    u.lang = 'en-US';
+    u.rate = 1.0 * p.speed;
+    u.volume = 1;
+    const voices = synth.getVoices();
+    const voice = voices.find((vv) => /^en/i.test(vv.lang) && /Google|Natural|Samantha|Daniel|Aria|Jenny/i.test(vv.name)) || voices.find((vv) => /^en/i.test(vv.lang));
     if (voice) u.voice = voice;
     p.speaking = true;
-    u.onend = u.onerror = () => { p.speaking = false; };
-    speechSynthesis.speak(u);
+    const token = (p.speakToken = (p.speakToken || 0) + 1);
+    u.onend = u.onerror = () => { if (p.speakToken === token) p.speaking = false; };
+    // Chrome drops an utterance queued in the same tick as cancel(), and can stay paused after a tab switch.
+    setTimeout(() => { if (p.speakToken !== token || p.muted) return; synth.resume(); synth.speak(u); }, 60);
+    // Safety net: never hold the video forever if the browser never reports the end of speech.
+    setTimeout(() => { if (p.speakToken === token) p.speaking = false; }, Math.max(4000, text.length * 90 / p.speed));
   }
   function showScene(i, narrate) {
     p.scene = i;
@@ -659,11 +671,11 @@ async function renderWatch(id) {
     else p.t += dt;
     if (p.t >= total) {
       const last = v.scenes.length - 1;
-      if (v.scenes[last].checkpoint && !p.cpDone[last]) { p.t = total - 0.01; draw(); return checkpoint(last); }
+      if (IN_VIDEO_CHECKPOINTS && v.scenes[last].checkpoint && !p.cpDone[last]) { p.t = total - 0.01; draw(); return checkpoint(last); }
       p.t = total; draw(); return finish();
     }
     const ni = sceneAt(p.t);
-    if (ni !== p.scene && v.scenes[p.scene] && v.scenes[p.scene].checkpoint && !p.cpDone[p.scene] && ni === p.scene + 1) {
+    if (IN_VIDEO_CHECKPOINTS && ni !== p.scene && v.scenes[p.scene] && v.scenes[p.scene].checkpoint && !p.cpDone[p.scene] && ni === p.scene + 1) {
       p.t = starts[ni] - 0.01; draw(); return checkpoint(p.scene);
     }
     if (ni !== p.scene) showScene(ni, true);
@@ -672,6 +684,7 @@ async function renderWatch(id) {
   }
   function play() {
     if (p.t >= total) p.t = 0;
+    if (p.muted) toast('Narration is off. Tap “🔇 Sound off” to turn it on.');
     p.playing = true;
     $('#overlay').hidden = true;
     $('#pp').textContent = '❚❚ Pause'; $('#pp').setAttribute('aria-label', 'Pause');
@@ -748,6 +761,7 @@ async function renderWatch(id) {
     p.muted = !p.muted;
     localStorage.setItem('cr-muted', p.muted ? '1' : '0');
     setMute();
+    if (!p.muted && p.playing) speak(v.scenes[p.scene].narration);
     if (p.muted && 'speechSynthesis' in window) { speechSynthesis.cancel(); p.speaking = false; }
   });
 
@@ -860,7 +874,7 @@ async function renderWatch(id) {
   }
 
   function renderQuiz() {
-    const qs = v.quiz || [];
+    const qs = QS;
     if (!qs.length) {
       $('#quiz-slot').innerHTML = `<div class="quiz"><h3>Done!</h3><p class="hint">${data.parent ? `<a href="#/watch/${data.parent.id}">Back to the full video</a>` : 'Was this helpful? Your 👍 / 👎 helps rank it for others.'}</p></div>`;
       return;
@@ -892,7 +906,7 @@ async function renderWatch(id) {
   let prepost = data.prepost || null;
   let warmupSkipped = false;
   function needWarmup() {
-    if (!(v.quiz || []).length || (prepost && prepost.pre != null) || warmupSkipped || p.completed) return false;
+    if (!QS.length || (prepost && prepost.pre != null) || warmupSkipped || p.completed) return false;
     $('#pre-slot').scrollIntoView({ behavior: 'smooth', block: 'start' });
     $('#pre-slot .prequiz')?.classList.add('pulse');
     const first = $('#pre-slot input'); if (first) first.focus({ preventScroll: true });
@@ -900,7 +914,7 @@ async function renderWatch(id) {
     return true;
   }
   function renderWarmup() {
-    const qs = v.quiz || [];
+    const qs = QS;
     if (!qs.length) return;
     if (prepost && prepost.pre != null) {
       $('#pre-slot').innerHTML = `<div class="prequiz done"><b>Your starting point:</b> ${prepost.pre}/${prepost.total} before watching${prepost.post != null ? ` · ${prepost.post}/${prepost.total} after` : '. Take the same quiz after the video to see your progress.'}</div>`;
@@ -954,7 +968,7 @@ async function renderProfile() {
       <div class="pstat lime"><b>${d.avgGain == null ? '–' : `${d.avgGain > 0 ? '+' : ''}${d.avgGain}`}</b><span>average points gained, before → after</span></div>
       <div class="pstat"><b>${d.measured}</b><span>lessons measured before and after</span></div>
       <div class="pstat"><b>${d.watched.length}</b><span>lessons watched</span></div>
-      <div class="pstat"><b>${d.checkpointsAnswered}</b><span>checkpoint questions answered</span></div>
+      <div class="pstat"><b>${d.prepost.length}</b><span>warm-ups taken before a lesson</span></div>
     </section>
     <div class="prof-grid">
       <section class="card">
