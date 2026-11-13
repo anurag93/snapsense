@@ -1,0 +1,12 @@
+{
+  "_readme": "Kid-safety term lists. Edit freely and restart the server. Matching is whole-word and case-insensitive, after undoing leetspeak (f*ck, sh1t, $hit), repeated letters (fuuuck) and spaced-out letters (f u c k). A term ending in * matches any word that starts with it. 'allow' lists phrases that are always fine in a school context; they are removed before checking. Point SAFETY_TERMS_FILE at your own copy to replace this file.",
+  "block": {
+    "profanity": ["fuck*", "motherfuck*", "shit", "shits", "shitty", "shithead*", "bullshit", "bitch*", "bastard*", "asshole*", "arsehole*", "dumbass*", "jackass*", "dickhead*", "cunt*", "twat*", "wank*", "bollocks", "piss off", "pissed off", "goddamn*", "wtf", "stfu", "fml"],
+    "insults_bullying": ["idiot", "idiots", "moron*", "stupid kid", "you are stupid", "you're stupid", "ur stupid", "loser", "losers", "retard*", "you suck", "shut up", "nobody likes you", "go away freak", "ugly fat", "fatso", "fat pig"],
+    "sexual": ["porn*", "xxx", "nsfw", "nudes", "send nudes", "sexting", "blowjob*", "handjob*", "hentai", "milf", "orgasm*", "horny", "dildo*", "boobs", "tits", "pussy", "penis size", "onlyfans", "stripper*", "hooker*", "camgirl*"],
+    "hate": ["nigger*", "nigga*", "faggot*", "fag", "fags", "dyke", "dykes", "tranny", "trannies", "chink*", "spic", "spics", "kike*", "wetback*", "raghead*", "towelhead*", "gook*", "paki", "pakis", "heil hitler", "white power", "gas the jews"],
+    "self_harm": ["kill yourself", "kill urself", "kys", "go die", "how to self harm", "how to cut myself", "ways to commit suicide", "how to commit suicide", "best way to die"],
+    "threats_violence": ["i will kill you", "i'll kill you", "im going to kill you", "i'm going to kill you", "shoot up the school", "school shooting plan", "how to make a bomb", "make a pipe bomb", "how to make a gun"]
+  },
+  "allow": ["sexual reproduction", "asexual reproduction", "sexual selection", "sex cells", "sex chromosomes", "shut up and calculate", "suicide in literature", "suicide prevention", "school shootings history", "bombing of hiroshima", "atomic bomb", "pearl harbor attack", "scunthorpe", "dick whittington", "moby dick", "cockpit", "cocktail", "peacock", "spice", "spices", "hitler's rise", "white blood cell", "white power plant"]
+}

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ConceptReel</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/"><span class="logo">▶</span> ConceptReel</a>
+    <div class="topbar-right">
+      <div class="tokens" id="tokens" title="Weekly token budget">
+        <div class="tokens-label"><span id="tokens-num">–</span> tokens left</div>
+        <div class="meter"><div class="meter-fill" id="tokens-bar"></div></div>
+        <div class="tokens-sub" id="tokens-sub"></div>
+      </div>
+      <label class="user-pick">
+        <span>Learner</span>
+        <select id="user-select"></select>
+      </label>
+    </div>
+  </header>
+  <main id="app"></main>
+  <div id="toast" class="toast" hidden></div>
+  <div id="modal" class="modal" hidden><div class="modal-card" id="modal-card"></div></div>
+  <script src="/app.js"></script>
+</body>
+</html>

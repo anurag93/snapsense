@@ -1,0 +1,330 @@
+{
+ "Photosynthesis: how plants make food from light": {
+  "1": {
+   "q": "Which of these is NOT one of the three things the leaf's recipe needs?",
+   "options": [
+    "Water",
+    "Oxygen",
+    "Carbon dioxide",
+    "Light"
+   ],
+   "answer": 1,
+   "hint": "Think about what the plant takes in, not what it gives out.",
+   "feedback_correct": "Yes: oxygen is something the plant releases, not an ingredient.",
+   "feedback_incorrect": "That one is an ingredient. Listen again to the three things the recipe needs.",
+   "explanation": "The recipe is water, carbon dioxide and light. Oxygen is made, not used."
+  },
+  "2": {
+   "q": "Why do most leaves look green?",
+   "options": [
+    "Chlorophyll absorbs green light",
+    "Chlorophyll reflects green light",
+    "Leaves are full of water",
+    "Sunlight is green"
+   ],
+   "answer": 1,
+   "hint": "What happens to the colours chlorophyll does NOT absorb?",
+   "feedback_correct": "Right: green light bounces off, so that's the colour we see.",
+   "feedback_incorrect": "Close, but think about which colours chlorophyll keeps and which it sends back.",
+   "explanation": "Chlorophyll absorbs red and blue light and reflects green, so green reaches your eyes."
+  },
+  "3": {
+   "q": "Photosynthesis makes glucose and what else?",
+   "options": [
+    "Carbon dioxide",
+    "Water",
+    "Oxygen",
+    "Chlorophyll"
+   ],
+   "answer": 2,
+   "hint": "It's the gas you breathe in.",
+   "feedback_correct": "Yes: six oxygen molecules come out with one glucose.",
+   "feedback_incorrect": "That one goes in, not out. Look at the right side of the equation.",
+   "explanation": "6 CO2 + 6 H2O, powered by light, make 1 glucose + 6 O2."
+  }
+ },
+ "Photosynthesis in 60 seconds (equation focus)": {
+  "1": {
+   "q": "In the light reactions, what gets split?",
+   "options": [
+    "Glucose",
+    "Water",
+    "Carbon dioxide",
+    "ATP"
+   ],
+   "answer": 1,
+   "hint": "The oxygen we breathe comes from it.",
+   "feedback_correct": "Yes: light splits water, which releases oxygen.",
+   "feedback_incorrect": "Not quite. Which molecule gives up its oxygen in this stage?",
+   "explanation": "Light splits water, releasing oxygen and charging ATP and NADPH."
+  },
+  "2": {
+   "q": "What does the Calvin cycle turn into glucose?",
+   "options": [
+    "Oxygen",
+    "Water",
+    "Carbon dioxide",
+    "Chlorophyll"
+   ],
+   "answer": 2,
+   "hint": "It's the gas plants take in from the air.",
+   "feedback_correct": "Right: it fixes carbon dioxide into glucose.",
+   "feedback_incorrect": "That isn't what gets 'fixed'. Think about where the carbon in glucose comes from.",
+   "explanation": "The Calvin cycle uses ATP and NADPH to fix carbon dioxide into glucose."
+  }
+ },
+ "Newton's three laws of motion": {
+  "1": {
+   "q": "A skateboard is rolling on a smooth path. Why does it eventually stop?",
+   "options": [
+    "It runs out of motion",
+    "Friction acts on it",
+    "Gravity pushes it backwards",
+    "Objects always slow down by themselves"
+   ],
+   "answer": 1,
+   "hint": "The first law says it keeps rolling unless something acts on it. What acts on it?",
+   "feedback_correct": "Exactly: friction is the force that slows it.",
+   "feedback_incorrect": "The first law says motion doesn't just run out. Which force did the scene mention?",
+   "explanation": "An object keeps moving unless a force acts on it; here, friction is that force."
+  },
+  "2": {
+   "q": "You push two skateboards equally hard. One carries a friend. Which speeds up less?",
+   "options": [
+    "The empty one",
+    "The one carrying a friend",
+    "They speed up the same",
+    "Neither moves"
+   ],
+   "answer": 1,
+   "hint": "More mass, same force: what happens to acceleration?",
+   "feedback_correct": "Yes: more mass means less acceleration for the same force.",
+   "feedback_incorrect": "Think about F = ma. If F stays the same and m goes up, what happens to a?",
+   "explanation": "F = ma, so with the same force, a bigger mass gets a smaller acceleration."
+  },
+  "3": {
+   "q": "You push off a wall on a skateboard. What does the wall do?",
+   "options": [
+    "Nothing, walls can't push",
+    "Pushes you back just as hard",
+    "Pushes you back harder",
+    "Pulls you towards it"
+   ],
+   "answer": 1,
+   "hint": "Every action has an equal and opposite...",
+   "feedback_correct": "Right: equal and opposite reaction.",
+   "feedback_incorrect": "Walls do push back. How hard, according to the third law?",
+   "explanation": "For every action there is an equal and opposite reaction."
+  }
+ },
+ "Causes of the French Revolution": {
+  "1": {
+   "q": "Which group paid for nearly everything?",
+   "options": [
+    "The clergy",
+    "The nobles",
+    "The Third Estate",
+    "The king"
+   ],
+   "answer": 2,
+   "hint": "It was the biggest group: everyone else.",
+   "feedback_correct": "Yes: the Third Estate carried the tax burden.",
+   "feedback_incorrect": "That group was a small minority that paid almost no taxes.",
+   "explanation": "Clergy and nobles paid almost no tax; the Third Estate paid for nearly everything."
+  },
+  "2": {
+   "q": "What made France's debt worse?",
+   "options": [
+    "Building roads",
+    "Wars, including helping the Americans",
+    "Low bread prices",
+    "Too many taxes on nobles"
+   ],
+   "answer": 1,
+   "hint": "Think about what the scene said cost so much money.",
+   "feedback_correct": "Right: wars left France deeply in debt.",
+   "feedback_incorrect": "Not quite. Which costly events did the scene name?",
+   "explanation": "Wars, including helping the Americans win independence, left France deeply in debt."
+  }
+ },
+ "Mitosis: how one cell becomes two": {
+  "2": {
+   "q": "What happens in metaphase?",
+   "options": [
+    "Chromosomes line up in the middle",
+    "The cell pinches in two",
+    "Chromosomes become visible",
+    "Chromatids are pulled apart"
+   ],
+   "answer": 0,
+   "hint": "Remember the hallway comparison.",
+   "feedback_correct": "Yes: they line up in the middle, like students in a hallway.",
+   "feedback_incorrect": "That's a different phase. What did the hallway picture show?",
+   "explanation": "In metaphase chromosomes line up across the middle of the cell."
+  },
+  "3": {
+   "q": "In anaphase, what pulls the sister chromatids apart?",
+   "options": [
+    "The nucleus",
+    "Spindle fibres",
+    "The cell membrane",
+    "Chlorophyll"
+   ],
+   "answer": 1,
+   "hint": "They stretch across the cell like ropes.",
+   "feedback_correct": "Right: spindle fibres pull them to opposite ends.",
+   "feedback_incorrect": "Not quite. Which structures act like ropes in this phase?",
+   "explanation": "Spindle fibres pull the sister chromatids to opposite ends of the cell."
+  }
+ },
+ "The Pythagorean theorem": {
+  "1": {
+   "q": "In a right triangle, which side is the hypotenuse?",
+   "options": [
+    "The shortest side",
+    "The side next to the right angle",
+    "The longest side, opposite the right angle",
+    "Any side"
+   ],
+   "answer": 2,
+   "hint": "Look across from the square corner.",
+   "feedback_correct": "Yes: it's the longest side, opposite the right angle.",
+   "feedback_incorrect": "Not quite. Where is it compared with the right angle?",
+   "explanation": "The hypotenuse is opposite the right angle and is always the longest side."
+  },
+  "2": {
+   "q": "A right triangle has legs of 6 and 8. What is the hypotenuse?",
+   "options": [
+    "10",
+    "14",
+    "48",
+    "100"
+   ],
+   "answer": 0,
+   "hint": "Square each leg, add, then take the square root.",
+   "feedback_correct": "Yes: 36 + 64 = 100, and the square root of 100 is 10.",
+   "feedback_incorrect": "Check the last step: did you take the square root of the sum?",
+   "explanation": "6² + 8² = 36 + 64 = 100, and √100 = 10."
+  }
+ },
+ "Supply and demand": {
+  "1": {
+   "q": "Ticket prices go up. What usually happens to how many people want to buy?",
+   "options": [
+    "It goes up",
+    "It goes down",
+    "It stays the same",
+    "It doubles"
+   ],
+   "answer": 1,
+   "hint": "Think about how you react when something gets pricier.",
+   "feedback_correct": "Right: higher price, lower quantity demanded.",
+   "feedback_incorrect": "Not quite. What did the scene say people do when price rises?",
+   "explanation": "Demand: when price goes up, people buy less."
+  },
+  "3": {
+   "q": "What is equilibrium?",
+   "options": [
+    "The highest possible price",
+    "Where buyers want exactly what sellers offer",
+    "When sellers stop selling",
+    "When demand is zero"
+   ],
+   "answer": 1,
+   "hint": "It's where the two amounts meet.",
+   "feedback_correct": "Yes: the price where buyers' and sellers' amounts match.",
+   "feedback_incorrect": "Not quite. Equilibrium is about two amounts being equal. Which two?",
+   "explanation": "Equilibrium is where the amount people want to buy equals the amount sellers offer."
+  }
+ },
+ "The water cycle": {
+  "1": {
+   "q": "What turns liquid water into water vapour?",
+   "options": [
+    "Cold air",
+    "The sun's heat",
+    "Wind",
+    "Rain"
+   ],
+   "answer": 1,
+   "hint": "Evaporation needs energy. Where does it come from?",
+   "feedback_correct": "Yes: the sun heats the water and it evaporates.",
+   "feedback_incorrect": "Not quite. Which one adds energy to the water?",
+   "explanation": "The sun heats oceans and lakes, turning liquid water into vapour."
+  },
+  "2": {
+   "q": "Why does water vapour form clouds high up?",
+   "options": [
+    "It gets colder and condenses",
+    "It gets hotter and expands",
+    "Wind squeezes it",
+    "It mixes with dust only"
+   ],
+   "answer": 0,
+   "hint": "What is the air like high up?",
+   "feedback_correct": "Right: it cools and condenses into droplets.",
+   "feedback_incorrect": "Think about temperature high in the sky.",
+   "explanation": "High up it is cold, so vapour cools and condenses into tiny droplets."
+  }
+ },
+ "Ionic vs covalent bonds": {
+  "1": {
+   "q": "In table salt, what does sodium do?",
+   "options": [
+    "Shares an electron with chlorine",
+    "Gives an electron to chlorine",
+    "Takes an electron from chlorine",
+    "Nothing"
+   ],
+   "answer": 1,
+   "hint": "Ionic bonds are about giving and taking.",
+   "feedback_correct": "Yes: sodium gives one electron, so it becomes positive.",
+   "feedback_incorrect": "Not quite. In an ionic bond, is the electron shared or handed over?",
+   "explanation": "Sodium gives one electron to chlorine; the opposite charges attract."
+  },
+  "3": {
+   "q": "Two non-metals usually form which kind of bond?",
+   "options": [
+    "Ionic",
+    "Covalent",
+    "Metallic",
+    "No bond"
+   ],
+   "answer": 1,
+   "hint": "Think about water: oxygen and hydrogen.",
+   "feedback_correct": "Right: two non-metals usually share electrons, which is covalent.",
+   "feedback_incorrect": "Not quite. What kind of bond did water have?",
+   "explanation": "Metal + non-metal is usually ionic; two non-metals usually covalent."
+  }
+ },
+ "The Industrial Revolution": {
+  "1": {
+   "q": "Why was Watt's improved steam engine such a big deal?",
+   "options": [
+    "It was the first machine ever",
+    "Machines could run anywhere, not just by rivers",
+    "It made farming easier",
+    "It used no fuel"
+   ],
+   "answer": 1,
+   "hint": "Before it, where did factories have to be built?",
+   "feedback_correct": "Yes: factories no longer needed to sit next to rivers.",
+   "feedback_incorrect": "Not quite. Think about where machines could be used before and after.",
+   "explanation": "Steam could power machines anywhere, not only next to rivers."
+  },
+  "2": {
+   "q": "Why did cities grow so fast?",
+   "options": [
+    "People moved there for factory jobs",
+    "Farms paid more",
+    "Cities were quieter",
+    "The government required it"
+   ],
+   "answer": 0,
+   "hint": "Where were the new jobs?",
+   "feedback_correct": "Right: people followed the factory jobs.",
+   "feedback_incorrect": "Not quite. What drew people to cities in the scene?",
+   "explanation": "People moved to cities for factory jobs, so cities grew fast."
+  }
+ }
+}
