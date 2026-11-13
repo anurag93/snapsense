@@ -17,6 +17,8 @@ from urllib.parse import urlparse
 log = logging.getLogger("conceptreel")
 
 URL = os.environ.get("WEAVIATE_URL", "").strip()
+if URL and "://" not in URL:  # Weaviate Cloud shows the endpoint without a scheme
+    URL = ("http://" if URL.split(":")[0] in ("localhost", "127.0.0.1") else "https://") + URL
 COLLECTION = os.environ.get("WEAVIATE_COLLECTION", "VideoChunk")
 _client = None
 _coll = None
@@ -43,18 +45,23 @@ def _connect():
 def _ensure_collection():
     from weaviate.classes.config import Configure, DataType, Property, VectorDistances
     if not _client.collections.exists(COLLECTION):
-        _client.collections.create(
-            COLLECTION,
-            properties=[
-                Property(name="video_id", data_type=DataType.TEXT, skip_vectorization=True),
-                Property(name="kind", data_type=DataType.TEXT, skip_vectorization=True),  # header | scene
-                Property(name="scene", data_type=DataType.INT),
-                Property(name="text", data_type=DataType.TEXT, skip_vectorization=True),
-                Property(name="hash", data_type=DataType.TEXT, skip_vectorization=True),
-            ],
-            vector_config=Configure.Vectors.self_provided(
-                vector_index_config=Configure.VectorIndex.hnsw(distance_metric=VectorDistances.COSINE)),
-        )
+        props = [
+            Property(name="video_id", data_type=DataType.TEXT, skip_vectorization=True),
+            Property(name="kind", data_type=DataType.TEXT, skip_vectorization=True),  # header | scene
+            Property(name="scene", data_type=DataType.INT),
+            Property(name="text", data_type=DataType.TEXT, skip_vectorization=True),
+            Property(name="hash", data_type=DataType.TEXT, skip_vectorization=True),
+        ]
+        try:
+            _client.collections.create(COLLECTION, properties=props, vector_config=Configure.Vectors.self_provided(
+                vector_index_config=Configure.VectorIndex.hnsw(distance_metric=VectorDistances.COSINE)))
+        except Exception as e:
+            # Some Weaviate Cloud plans only allow their own index type (e.g. "hfresh"):
+            # fall back to the server's default index, which also uses cosine distance.
+            if "not allowed" not in str(e).lower() and "CONFIG_NOT_ALLOWED" not in str(e):
+                raise
+            log.info("Weaviate rejected an HNSW index, using the server default index instead")
+            _client.collections.create(COLLECTION, properties=props, vector_config=Configure.Vectors.self_provided())
     return _client.collections.get(COLLECTION)
 
 
