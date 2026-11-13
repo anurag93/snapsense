@@ -32,7 +32,7 @@ function showError(e, ms = 6000) {
     $('#m-close').addEventListener('click', () => modal());
     return;
   }
-  toast(`${e.code && !['hold', 'illegible'].includes(e.code) ? '🛡️ ' : ''}${esc(e.message)}`, ms);
+  toast(`${e.code && !['hold', 'illegible', 'review_failed'].includes(e.code) ? '🛡️ ' : ''}${esc(e.message)}`, ms);
 }
 const U = () => `user=${encodeURIComponent(state.user)}`;
 function modal(html) {
@@ -108,13 +108,24 @@ function renderTokens(u) {
   $('#tokens-sub').textContent = `Refills in ${days} day${days === 1 ? '' : 's'}${u.saved ? ` · ${u.saved} saved by reusing` : ''}`;
   $('#tokens').setAttribute('aria-label', `${u.balance} of ${u.weekly} weekly tokens left`);
 }
+function askLearnerName() {
+  return new Promise((resolve) => {
+    modal(`<h3>Add a learner</h3><form id="nl-form" class="nl-form"><label for="nl-name">First name or nickname</label>
+      <input id="nl-name" maxlength="24" autocomplete="off" required />
+      <p class="hint">Avoid full names. Each learner gets their own grade, tokens and progress.</p>
+      <div class="gen-row" style="justify-content:center"><button class="btn primary">Add learner</button><button class="btn outline" type="button" id="nl-cancel">Cancel</button></div></form>`);
+    $('#nl-name').focus();
+    $('#nl-cancel').addEventListener('click', () => { modal(); resolve(''); });
+    $('#nl-form').addEventListener('submit', (ev) => { ev.preventDefault(); const n = $('#nl-name').value.trim().slice(0, 24); modal(); resolve(n); });
+  });
+}
 $('#user-select').addEventListener('change', async (e) => {
-  if (e.target.value === '__new') {
-    const name = (prompt('New learner name?') || '').trim().slice(0, 24);
+  let name = e.target.value;
+  if (name === '__new') {
+    name = await askLearnerName();
     if (!name) { e.target.value = state.user; return; }
-    e.target.value = name;
   }
-  state.user = e.target.value === '__new' ? state.user : e.target.value;
+  state.user = name;
   localStorage.setItem('cr-user', state.user);
   await refreshState();
   route();
@@ -475,6 +486,7 @@ async function renderWatch(id) {
     </div>
     <div class="watch">
       <div class="watch-main">
+        <div id="pre-slot"></div>
         <section class="player" aria-label="Lesson video">
           <div class="stage" id="stage">
             <div class="scene-num" id="scene-num"></div>
@@ -730,8 +742,8 @@ async function renderWatch(id) {
     dragStart = null;
   });
 
-  $('#pp').addEventListener('click', () => (p.playing ? pause() : play()));
-  $('#playbig').addEventListener('click', () => { if (p.t >= total) p.t = 0; play(); });
+  $('#pp').addEventListener('click', () => (p.playing ? pause() : needWarmup() || play()));
+  $('#playbig').addEventListener('click', () => { if (needWarmup()) return; if (p.t >= total) p.t = 0; play(); });
   $('#mute').addEventListener('click', () => {
     p.muted = !p.muted;
     localStorage.setItem('cr-muted', p.muted ? '1' : '0');
@@ -853,7 +865,8 @@ async function renderWatch(id) {
       $('#quiz-slot').innerHTML = `<div class="quiz"><h3>Done!</h3><p class="hint">${data.parent ? `<a href="#/watch/${data.parent.id}">Back to the full video</a>` : 'Was this helpful? Your 👍 / 👎 helps rank it for others.'}</p></div>`;
       return;
     }
-    $('#quiz-slot').innerHTML = `<div class="quiz"><h3>Quick check: did it click?</h3><p class="hint" style="margin:0">Your answers help rank this video for other learners.</p>
+    const pre = prepost && prepost.pre != null ? prepost : null;
+    $('#quiz-slot').innerHTML = `<div class="quiz"><h3>${pre ? 'After: same questions. Did it click?' : 'Quick check: did it click?'}</h3><p class="hint" style="margin:0">${pre ? `Before the video you got ${pre.pre}/${pre.total}. Let’s see what changed.` : 'Your answers help rank this video for other learners.'}</p>
       ${qs.map((q, qi) => `<div class="q">${qi + 1}. ${esc(q.q)}</div>${q.options.map((o, oi) => `<label><input type="radio" name="q${qi}" value="${oi}"> ${esc(o)}</label>`).join('')}`).join('')}
       <div class="gen-row" style="margin-top:10px"><button class="btn" id="quiz-btn">Check answers</button><span id="quiz-res" class="hint"></span></div></div>`;
     $('#quiz-btn').addEventListener('click', async () => {
@@ -869,12 +882,95 @@ async function renderWatch(id) {
       });
       $('#quiz-btn').disabled = true;
       $('#quiz-res').innerHTML = correct === qs.length ? `🎉 ${correct}/${qs.length}. Nailed it.` : `${correct}/${qs.length}. Select the part you missed on the timeline and tap “Explain this part”.`;
-      api(`/api/videos/${id}/event`, { body: { type: 'quiz', correct, total: qs.length } }).catch(() => {});
+      api(`/api/videos/${id}/event`, { body: { type: 'quiz', correct, total: qs.length } }).then((r) => {
+        if (r.prepost && r.prepost.post != null) { prepost = r.prepost; $('#quiz-res').insertAdjacentHTML('afterend', gainHtml(r.prepost)); }
+      }).catch(() => {});
     });
   }
 
+  // Before the video: the same quiz as a warm-up, so the learner (and we) can measure the change.
+  let prepost = data.prepost || null;
+  let warmupSkipped = false;
+  function needWarmup() {
+    if (!(v.quiz || []).length || (prepost && prepost.pre != null) || warmupSkipped || p.completed) return false;
+    $('#pre-slot').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $('#pre-slot .prequiz')?.classList.add('pulse');
+    const first = $('#pre-slot input'); if (first) first.focus({ preventScroll: true });
+    toast('Take the 30-second warm-up first, or tap “Skip for now”.');
+    return true;
+  }
+  function renderWarmup() {
+    const qs = v.quiz || [];
+    if (!qs.length) return;
+    if (prepost && prepost.pre != null) {
+      $('#pre-slot').innerHTML = `<div class="prequiz done"><b>Your starting point:</b> ${prepost.pre}/${prepost.total} before watching${prepost.post != null ? ` · ${prepost.post}/${prepost.total} after` : '. Take the same quiz after the video to see your progress.'}</div>`;
+      return;
+    }
+    $('#pre-slot').innerHTML = `<section class="prequiz" aria-labelledby="pre-h">
+      <h2 id="pre-h">Before you watch: what do you already know?</h2>
+      <p class="hint">${qs.length} quick question${qs.length === 1 ? '' : 's'}. No pressure and no tokens: you’ll answer the same ones after the video to see how much you learned.</p>
+      ${qs.map((q, qi) => `<fieldset><legend>${qi + 1}. ${esc(q.q)}</legend>${q.options.map((o, oi) => `<label><input type="radio" name="pre${qi}" value="${oi}"> ${esc(o)}</label>`).join('')}<label><input type="radio" name="pre${qi}" value="-1"> I’m not sure yet</label></fieldset>`).join('')}
+      <div class="gen-row"><button class="btn primary" id="pre-btn">Save my starting point</button><button class="btn outline" id="pre-skip">Skip for now</button></div>
+    </section>`;
+    $('#pre-btn').addEventListener('click', async () => {
+      let correct = 0;
+      qs.forEach((q, qi) => { const pick = document.querySelector(`input[name=pre${qi}]:checked`); if (pick && Number(pick.value) === q.answer) correct++; });
+      const r = await api(`/api/videos/${id}/event`, { body: { type: 'prequiz', correct, total: qs.length } }).catch((e) => { showError(e); return null; });
+      if (!r) return;
+      prepost = r.prepost || { pre: correct, total: qs.length };
+      renderWarmup();
+      toast(`Starting point saved: ${prepost.pre}/${prepost.total}. We won’t show answers yet. Now watch!`);
+      $('#playbig').focus();
+    });
+    $('#pre-skip').addEventListener('click', () => { warmupSkipped = true; $('#pre-slot').innerHTML = ''; $('#playbig').focus(); });
+  }
+  renderWarmup();
+
   showScene(0, false);
   draw();
+}
+
+// ---------- Before/after ----------
+function gainHtml(pp) {
+  const pct = (n) => Math.round((n / pp.total) * 100);
+  const d = pct(pp.post) - pct(pp.pre);
+  return `<div class="gain" role="status"><div class="gain-row"><span>Before</span><div class="gbar"><div style="width:${pct(pp.pre)}%"></div></div><b>${pp.pre}/${pp.total}</b></div>
+    <div class="gain-row"><span>After</span><div class="gbar after"><div style="width:${pct(pp.post)}%"></div></div><b>${pp.post}/${pp.total}</b></div>
+    <p class="gain-msg">${d > 0 ? `Your understanding grew by <b>${d} points</b>. 🎉` : d === 0 ? (pp.post === pp.total ? 'You already knew this, and you still do. 💪' : 'Same score as before. Try “Explain this part” on the bit that felt tricky.') : 'A bit lower than before. Rewatch the tricky scene or ask for a deep dive.'}</p></div>`;
+}
+
+// ---------- Profile ----------
+async function renderProfile() {
+  const d = await api(`/api/profile?${U()}`);
+  const u = d.user;
+  const saved = JSON.parse(localStorage.getItem(`cr-saved-${state.user}`) || '[]');
+  const titles = Object.fromEntries(d.watched.map((w) => [w.id, w.title]));
+  app.innerHTML = `
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="#/">Explore</a> / <span aria-current="page">My progress</span></nav>
+    <div class="lesson-head"><div><h1>${esc(u.name)}’s progress</h1>
+      <div class="lesson-meta">${u.grade ? (u.grade === 'K' ? 'Kindergarten' : `Grade ${esc(u.grade)}`) : 'No grade yet'} · ${u.balance}/${u.weekly} tokens left this week · ${u.saved} tokens saved by reusing</div></div>
+      <div class="lesson-actions">${mascot('small')}</div></div>
+    <section class="prof-stats" aria-label="Summary">
+      <div class="pstat lime"><b>${d.avgGain == null ? '–' : `${d.avgGain > 0 ? '+' : ''}${d.avgGain}`}</b><span>average points gained, before → after</span></div>
+      <div class="pstat"><b>${d.measured}</b><span>lessons measured before and after</span></div>
+      <div class="pstat"><b>${d.watched.length}</b><span>lessons watched</span></div>
+      <div class="pstat"><b>${d.checkpointsAnswered}</b><span>checkpoint questions answered</span></div>
+    </section>
+    <div class="prof-grid">
+      <section class="card">
+        <h2>Understanding before and after</h2>
+        ${d.prepost.length ? d.prepost.map((r) => `<div class="pp-row">
+          <a href="#/watch/${r.id}" class="pp-title">${esc(r.title)}</a>
+          ${r.post != null ? gainHtml(r) : `<p class="hint">Before: ${r.pre}/${r.total}. <a href="#/watch/${r.id}">Finish the video</a> and take the quiz again to see your progress.</p>`}
+        </div>`).join('') : '<p class="empty">Nothing measured yet. Open any lesson, answer the warm-up before you watch, then the same quiz after.</p>'}
+      </section>
+      <aside>
+        <section class="panel side-panel"><h2>Recently watched</h2>${d.watched.length ? `<ul class="plist">${d.watched.map((w) => `<li><a href="#/watch/${w.id}">${esc(w.title)}</a></li>`).join('')}</ul>` : '<p class="empty">None yet.</p>'}</section>
+        <section class="panel side-panel"><h2>Saved lessons</h2>${saved.length ? `<ul class="plist">${saved.map((sid) => `<li><a href="#/watch/${sid}">${esc(titles[sid] || 'Saved lesson')}</a></li>`).join('')}</ul>` : '<p class="empty">Tap “Save lesson” on any lesson to keep it here.</p>'}</section>
+        <section class="panel side-panel"><h2>Deep dives you asked for</h2>${d.deepDives.length ? `<ul class="plist">${d.deepDives.map((w) => `<li><a href="#/watch/${w.id}">${esc(w.title)}</a></li>`).join('')}</ul>` : '<p class="empty">None yet.</p>'}</section>
+        ${d.made.length ? `<section class="panel side-panel"><h2>Lessons you made</h2><ul class="plist">${d.made.map((w) => `<li><a href="#/watch/${w.id}">${esc(w.title)}</a></li>`).join('')}</ul></section>` : ''}
+      </aside>
+    </div>`;
 }
 
 // ---------- router ----------
@@ -882,6 +978,10 @@ async function route() {
   stopPlayer();
   modal();
   const h = location.hash || '#/';
+  const onProfile = h.startsWith('#/profile');
+  $('#nav-explore').classList.toggle('on', !onProfile); $('#nav-profile').classList.toggle('on', onProfile);
+  if (onProfile) { $('#nav-profile').setAttribute('aria-current', 'page'); $('#nav-explore').removeAttribute('aria-current'); }
+  else { $('#nav-explore').setAttribute('aria-current', 'page'); $('#nav-profile').removeAttribute('aria-current'); }
   try {
     if (!state.info) await refreshState();
     if (h.startsWith('#/search')) {
@@ -889,6 +989,7 @@ async function route() {
       await renderSearch(params.get('q') || '', params.get('photo'));
     }
     else if (h.startsWith('#/watch/')) await renderWatch(h.slice(8));
+    else if (h.startsWith('#/profile')) await renderProfile();
     else await renderHome();
     window.scrollTo(0, 0);
   } catch (e) {

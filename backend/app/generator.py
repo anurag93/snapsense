@@ -151,16 +151,51 @@ class Declined(Exception):
         self.kind, self.suggestion = kind, suggestion
 
 
+_NO_STRICT: set = set()  # schemas the API said are too large for strict structured outputs
+
+
 async def _parse(system: str, content, schema, where: str):
-    res = await _client.messages.parse(
-        model=MODEL, max_tokens=16000, output_config={"effort": "low"}, output_format=schema,
-        system=system, messages=[{"role": "user", "content": content}],
-    )
-    if res.stop_reason == "refusal":
-        raise safety.Unsafe(["unsuitable_request"], where)
-    if res.parsed_output is None:  # fail closed on anything that isn't valid JSON for the schema
-        raise GenError("Generation failed")
-    return res.parsed_output.model_dump()
+    if schema.__name__ not in _NO_STRICT and os.environ.get("STRICT_JSON", "on") != "off":
+        try:
+            res = await _client.messages.parse(
+                model=MODEL, max_tokens=16000, output_config={"effort": "low"}, output_format=schema,
+                system=system, messages=[{"role": "user", "content": content}],
+            )
+        except Exception as e:
+            if "grammar is too large" not in str(e) and "too many" not in str(e).lower():
+                raise
+            _NO_STRICT.add(schema.__name__)  # remember, so later calls skip straight to the fallback
+        else:
+            if res.stop_reason == "refusal":
+                raise safety.Unsafe(["unsuitable_request"], where)
+            if res.parsed_output is None:  # fail closed on anything that isn't valid JSON for the schema
+                raise GenError("Generation failed")
+            return res.parsed_output.model_dump()
+    return await _parse_loose(system, content, schema, where)
+
+
+async def _parse_loose(system: str, content, schema, where: str):
+    """Fallback for big schemas: the JSON schema goes in the prompt and Pydantic validates the reply (one retry)."""
+    import json
+    from pydantic import ValidationError
+    sys2 = (system + "\n\nReply with ONLY one JSON object (no prose, no code fences) that matches this JSON schema. "
+            "Include every property; use null where a field does not apply.\n" + json.dumps(schema.model_json_schema()))
+    messages = [{"role": "user", "content": content}]
+    for attempt in (1, 2):
+        res = await _client.messages.create(model=MODEL, max_tokens=16000, output_config={"effort": "low"},
+                                            system=sys2, messages=messages)
+        if res.stop_reason == "refusal":
+            raise safety.Unsafe(["unsuitable_request"], where)
+        text = "".join(b.text for b in res.content if getattr(b, "type", "") == "text").strip()
+        m = re.search(r"\{.*\}", text, re.S)
+        try:
+            return schema.model_validate_json(m.group(0) if m else text).model_dump()
+        except (ValidationError, ValueError) as e:
+            if attempt == 2:
+                raise GenError("Generation failed") from e
+            messages = messages + [{"role": "assistant", "content": text or "{}"},
+                                   {"role": "user", "content": f"That JSON did not match the schema: {str(e)[:800]}. "
+                                                               "Reply with the corrected JSON object only."}]
 
 
 def _source_block(source_text: str) -> str:

@@ -212,9 +212,20 @@ async def checked_generation(kind: str, make, band: str, source_text: str, asses
                          "model": gen.MODEL if gen.mode() == "claude" else "offline"})
         if decision == "RELEASE":
             return out, {**rv, "needs_human_review": needs_review}
+        # Shows in the server log (Render → Logs) which check stopped the lesson.
+        log.warning("release %s on attempt %s for %s: checks=%s failed=%s fix_notes=%s problems=%s", decision, attempt,
+                    kind, checks, rv["failed"], (rv["fix_notes"] or "")[:400], problems[:5])
         if decision == "REGENERATE" and attempt == 1:
             fix_notes = "\n".join([rv["fix_notes"], *problems]).strip()
             continue
+        # REVIEW=advisory: if only the reviewer still objects after the retry (safety and answer-key checks pass),
+        # release it and record the reviewer's notes for a teacher instead of discarding the lesson.
+        if (REVIEW_ADVISORY and decision == "REGENERATE" and checks["content_review"] == "REVISE"
+                and all(checks[k] == "PASS" for k in ("input_moderation", "output_moderation", "answer_key"))):
+            note = "Reviewer flagged: " + ", ".join(rv["failed"]) if rv["failed"] else "Reviewer asked for revisions."
+            return out, {**rv, "needs_human_review": True, "teacher_note": (rv["teacher_note"] + " " + note).strip()}
+        if decision == "REGENERATE":
+            stop(kind, user, "review_failed")
         if decision == "BLOCK" and cats:
             blocked(kind, user, cats)
         stop(kind, user, {"BLOCK": "declined", "REGENERATE": "declined", "HOLD": "hold"}[decision]
@@ -223,6 +234,7 @@ async def checked_generation(kind: str, make, band: str, source_text: str, asses
 
 app = FastAPI(title="ConceptReel")
 REVIEW = os.environ.get("REVIEW", "on") != "off"
+REVIEW_ADVISORY = os.environ.get("REVIEW", "on") == "advisory"
 
 
 @app.exception_handler(ApiError)
@@ -266,7 +278,8 @@ def state(user: str | None = None):
     u = get_user(user)
     store.save_user(u)
     roots = [v for v in db["videos"] if not v.get("parentId")]
-    return {"user": user_view(u), "demoUsers": DEMO_USERS, "mode": gen.mode(), "cost": COST,
+    learners = DEMO_USERS + sorted(n for n, x in db["users"].items() if n not in DEMO_USERS and x.get("grade"))
+    return {"user": user_view(u), "demoUsers": learners, "mode": gen.mode(), "cost": COST,
             "grades": grades.GRADES, "bands": {k: {"ages": b["ages"], "maxDepth": b["max_depth"]} for k, b in grades.BANDS.items()},
             "storage": {"data": store.backend(), "vectors": "weaviate" if vectors.enabled() else "memory"},
             "metrics": db["metrics"] | {"videos": len(roots), "explainers": len(db["videos"]) - len(roots)}}
@@ -341,7 +354,8 @@ async def video(vid: str, user: str | None = None):
                           "depth": depth},
             "explainers": explainers, "alternatives": alternatives, "parent": card(root) if v.get("parentId") else None,
             "canGoDeeper": band is None or depth < grades.BANDS[band]["max_depth"],
-            "freeTextQuestions": band is None or grades.BANDS[band]["free_text"]}
+            "freeTextQuestions": band is None or grades.BANDS[band]["free_text"],
+            "prepost": (get_user(user).get("prepost") or {}).get(v["id"]) if user else None}
 
 
 @app.post("/api/videos/{vid}/event")
@@ -372,7 +386,17 @@ async def event(vid: str, request: Request):
         else:
             u["reactions"][v["id"]] = typ
             s[typ + "s"] += 1
+    elif typ == "prequiz":
+        # Before the video: the same quiz, to measure where the learner started.
+        total = max(0, num(b.get("total")))
+        pp = u.setdefault("prepost", {}).setdefault(v["id"], {})
+        if "pre" not in pp:
+            pp.update({"pre": min(total, max(0, num(b.get("correct")))), "total": total, "preAt": now_ms()})
     elif typ == "quiz":
+        pp = u.setdefault("prepost", {}).get(v["id"])
+        if pp is not None and "pre" in pp:
+            total = max(0, num(b.get("total")))
+            pp.update({"post": min(total, max(0, num(b.get("correct")))), "postAt": now_ms()})
         if v["id"] not in u["quizzed"]:
             u["quizzed"][v["id"]] = True
             total = max(0, num(b.get("total")))
@@ -400,7 +424,33 @@ async def event(vid: str, request: Request):
     store.save_user(u)
     store.save_metrics()
     store.log_event({"t": now_ms(), "user": u["name"], "video": v["id"], "type": typ})
-    return {"stats": s, "quality": quality(s), "reaction": u["reactions"].get(v["id"]), "user": user_view(u)}
+    return {"stats": s, "quality": quality(s), "reaction": u["reactions"].get(v["id"]), "user": user_view(u),
+            "prepost": u.get("prepost", {}).get(v["id"])}
+
+
+@app.get("/api/profile")
+def profile(user: str | None = None):
+    """A learner's progress: before/after quiz gains, checkpoints, lessons watched and deep dives asked."""
+    db = store.load()
+    u = get_user(user)
+    by_id = {v["id"]: v for v in db["videos"]}
+    rows = []
+    for vid, pp in (u.get("prepost") or {}).items():
+        v = by_id.get(vid)
+        if not v or not pp.get("total"):
+            continue
+        rows.append({"id": vid, "title": v["title"], "subject": v.get("subject"), "total": pp["total"], "pre": pp.get("pre"),
+                     "post": pp.get("post"), "at": pp.get("postAt") or pp.get("preAt")})
+    rows.sort(key=lambda r: r["at"] or 0, reverse=True)
+    done = [r for r in rows if r["post"] is not None]
+    gain = (sum((r["post"] - r["pre"]) / r["total"] for r in done) / len(done) * 100) if done else None
+    cp_total = sum(len(x) for x in (u.get("checkpointed") or {}).values())
+    watched = [{"id": vid, "title": by_id[vid]["title"], "subject": by_id[vid].get("subject"), "at": t}
+               for vid, t in sorted((u.get("viewed") or {}).items(), key=lambda kv: -kv[1]) if vid in by_id]
+    asked = [{"id": v["id"], "title": v["title"]} for v in db["videos"] if v.get("parentId") and v.get("createdBy") == u["name"]]
+    made = [{"id": v["id"], "title": v["title"]} for v in db["videos"] if not v.get("parentId") and v.get("createdBy") == u["name"]]
+    return {"user": user_view(u), "prepost": rows, "avgGain": None if gain is None else round(gain),
+            "measured": len(done), "checkpointsAnswered": cp_total, "watched": watched[:12], "deepDives": asked, "made": made}
 
 
 @app.post("/api/read-image")

@@ -31,6 +31,7 @@ MESSAGES = {
     "deep_dive_limit": "You've gone as deep as this lesson goes! Want to try a related topic?",
     "off_topic": "Let's stay on today's lesson. Try asking about the part of the video you're watching.",
     "declined": "We can't make a lesson on that for your grade. Ask your teacher if you need help with it.",
+    "review_failed": "This lesson didn't pass our quality check, so we didn't save it. No tokens were used. Try again, or paste a paragraph from your textbook so the lesson can follow it.",
     "hold": "Something went wrong checking that lesson, so we didn't show it. No tokens were used. Please try again.",
     "held_for_teacher": "Your lesson is ready and waiting for a teacher to approve it. No tokens were used yet.",
     "distress": "It sounds like something might be hard right now. Please talk to a trusted adult, like a parent, teacher, "
