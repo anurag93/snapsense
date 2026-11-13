@@ -50,7 +50,41 @@ async function refreshState() {
   const names = [...new Set([...state.info.demoUsers, state.user])];
   sel.innerHTML = names.map((n) => `<option ${n === state.user ? 'selected' : ''}>${esc(n)}</option>`).join('') + '<option value="__new">+ New learner…</option>';
   if (!state.info.user.grade) await onboardGrade();
+  renderGradeBar();
 }
+// Grade picker under the header: always visible, saved per learner.
+function renderGradeBar() {
+  const bar = $('#gradebar');
+  const u = state.info.user;
+  bar.hidden = !u.grade;
+  if (!u.grade) return;
+  const label = (g) => (g === 'K' ? 'Kindergarten' : `Grade ${g}`);
+  bar.innerHTML = `<div class="gb-inner">
+    <div class="gb-head"><h2 id="gradebar-h">What grade are you in?</h2><span class="hint">Saved for ${esc(state.user)} · Change anytime</span></div>
+    <div class="gb-grades" role="radiogroup" aria-labelledby="gradebar-h">${state.info.grades.map((g) => `<button type="button" role="radio" aria-checked="${g === u.grade}" aria-label="${label(g)}" class="gb-g ${g === u.grade ? 'on' : ''}" data-setgrade="${g}">${g}</button>`).join('')}</div>
+    <div class="gb-foot"><span>${esc(label(u.grade))}: videos, search results and new explanations are tailored to your level.</span><span>K = Kindergarten</span></div></div>`;
+  bar.querySelectorAll('[data-setgrade]').forEach((b) => b.addEventListener('click', async () => {
+    if (b.dataset.setgrade === u.grade) return;
+    try {
+      const r = await api('/api/user/grade', { body: { grade: b.dataset.setgrade } });
+      state.info.user = r.user;
+      renderTokens(r.user);
+      toast(`Saved. Lessons are now tailored to ${esc(label(r.user.grade))}.`);
+      await route();
+      const nb = $(`[data-setgrade="${b.dataset.setgrade}"]`); if (nb) nb.focus();
+    } catch (e) { showError(e); }
+  }));
+}
+$('#nav-how').addEventListener('click', () => {
+  modal(`<h3>How Snapsense works</h3><ol class="how">
+    <li><b>Explore a topic.</b> Search, tap a topic or upload a page. If another learner already made a lesson for it, you watch it free.</li>
+    <li><b>Watch a short explanation.</b> Checkpoints along the way check that it clicked.</li>
+    <li><b>Ask about the tricky part.</b> Pick the seconds you didn't get and get a deep dive just for that part. It joins the library for the next learner.</li></ol>
+    <p class="hint">You get ${state.info ? state.info.user.weekly : 100} tokens a week. New lessons cost tokens; reusing saved ones is free.</p>
+    <button class="btn" id="m-close">Got it</button>`);
+  $('#m-close').addEventListener('click', () => modal());
+  $('#m-close').focus();
+});
 // Onboarding: every learner gets a grade (in production the school or teacher account assigns it).
 function onboardGrade() {
   return new Promise((resolve) => {
@@ -71,7 +105,8 @@ function renderTokens(u) {
   $('#tokens-num').textContent = `${u.balance} / ${u.weekly}`;
   $('#tokens-bar').style.width = `${(u.balance / u.weekly) * 100}%`;
   const days = Math.max(0, Math.ceil((u.resetsAt - Date.now()) / 86400000));
-  $('#tokens-sub').textContent = `${u.grade ? `Grade ${u.grade} · ` : ''}Refills in ${days} day${days === 1 ? '' : 's'} · ${u.saved} saved by reusing`;
+  $('#tokens-sub').textContent = `Refills in ${days} day${days === 1 ? '' : 's'}${u.saved ? ` · ${u.saved} saved by reusing` : ''}`;
+  $('#tokens').setAttribute('aria-label', `${u.balance} of ${u.weekly} weekly tokens left`);
 }
 $('#user-select').addEventListener('change', async (e) => {
   if (e.target.value === '__new') {
@@ -91,16 +126,64 @@ function qPill(q) {
   return q.confident ? `<span class="qpill ${qClass(q.score)}">Helpfulness ${q.score}</span>` : '<span class="qpill new">New · not rated yet</span>';
 }
 function qClass(score) { return score >= 75 ? '' : score >= 60 ? 'mid' : 'low'; }
-function thumb(v, extra = '') {
-  return `<div class="vthumb">${esc(v.emoji || SUBJECT_EMOJI[v.subject] || '🎬')}${v.source === 'generated' ? `<span class="badge">${v.sourceImage ? '📷 From a photo' : 'New'}</span>` : v.source === 'explainer' ? '<span class="badge">Deep dive</span>' : ''}<span class="dur">${fmt(v.duration)}</span>${extra}</div>`;
+function thumb(v) { return posterHtml(v, true); }
+// Poster art for lesson cards: a big word and a tagline on the subject colour.
+const SUBJECT_TONE = { Biology: 'peach', Math: 'lilac', 'Earth Science': 'mint', Economics: 'butter', Physics: 'sky', History: 'rose', Chemistry: 'lime', General: 'stone' };
+const POSTERS = [
+  [/water cycle/i, 'WATER', 'Evaporate. Condense. Repeat.', 'mint'],
+  [/pythagor/i, 'a² + b² = c²', 'Three sides. One big idea.', 'lilac'],
+  [/mitosis/i, '1 → 2', 'One cell. Two new beginnings.', 'peach'],
+  [/photosynthesis in 60/i, '6CO₂ + 6H₂O', 'The whole recipe in one line.', 'mint'],
+  [/photosynthesis/i, 'LIGHT → LIFE', 'A little sunlight goes a long way.', 'lime'],
+  [/supply and demand/i, 'SUPPLY + DEMAND', 'What makes a price change?', 'butter'],
+  [/newton/i, 'F = ma', "Let's get things moving.", 'sky'],
+  [/french revolution/i, '1789', 'The ideas that changed France.', 'rose'],
+  [/industrial revolution/i, 'A NEW ERA', 'From hand tools to machines.', 'stone'],
+  [/krebs/i, 'CYCLE', 'Where your energy comes from.', 'peach'],
+];
+function poster(v) {
+  const hit = POSTERS.find(([re]) => re.test(v.title));
+  if (hit) return { big: hit[1], tag: hit[2], tone: hit[3] };
+  const words = v.title.replace(/[:(].*$/, '').trim().split(/\s+/);
+  return { big: words.slice(0, 2).join(' ').toUpperCase(), tag: (v.summary || '').split(/(?<=\.)\s/)[0].slice(0, 60), tone: v.source === 'explainer' ? 'lime' : SUBJECT_TONE[v.subject] || 'stone' };
 }
-function videoCard(v) {
-  return `<div class="vcard" data-go="${v.id}">
-    ${thumb(v)}
-    <div class="vtitle">${esc(v.title)}</div>
-    <div class="vmeta"><span>${esc(v.subject)}</span><span>Grades ${esc(v.gradeBand)}</span><span>${v.stats.views} views</span></div>
-    <div class="qrow"><span>Helpfulness</span><div class="qbar"><div style="width:${v.quality.score}%"></div></div><b>${v.quality.score}</b></div>
+function posterHtml(v, small = false) {
+  const p = poster(v);
+  return `<div class="poster tone-${p.tone}${small ? ' small' : ''}" aria-hidden="true">
+    <div class="p-sub">${esc(v.source === 'explainer' ? 'Deep dive' : v.subject)}</div>
+    <div class="p-big">${esc(p.big)}</div>
+    ${small ? '' : `<div class="p-tag">${esc(p.tag)}</div>`}
+    <span class="p-dur">${fmt(v.duration)}</span>
+    ${v.source === 'generated' ? `<span class="p-badge">${v.sourceImage ? 'From a photo' : 'New'}</span>` : ''}
   </div>`;
+}
+const gradeRange = (b) => String(b || '').replace('-', '–');
+function videoCard(v) {
+  return `<article class="vcard">
+    ${posterHtml(v)}
+    <h3 class="vtitle">${esc(v.title)}</h3>
+    <div class="vmeta">${esc(v.subject)} · Grades ${esc(gradeRange(v.gradeBand))}</div>
+    <div class="vmeta small">${v.stats.views} views · Helpfulness ${v.quality.score}/100</div>
+    <a class="btn dark full" href="#/watch/${v.id}">Watch lesson <span aria-hidden="true">→</span><span class="sr"> : ${esc(v.title)}</span></a>
+  </article>`;
+}
+// The learning companion. Decorative, so screen readers skip it.
+function mascot(cls = '') {
+  return `<svg class="mascot ${cls}" viewBox="0 0 200 200" aria-hidden="true" focusable="false">
+    <path d="M150 34l4 11 11 4-11 4-4 11-4-11-11-4 11-4z" fill="#f08a4b"/>
+    <g transform="rotate(-14 46 92)"><rect x="38" y="52" width="13" height="58" rx="3" fill="#f08a4b" stroke="#1a1a1a" stroke-width="4"/><path d="M38 52l6.5-14 6.5 14z" fill="#fff6e8" stroke="#1a1a1a" stroke-width="4" stroke-linejoin="round"/></g>
+    <path d="M52 112c-8-4-14 4-8 10" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>
+    <path d="M70 58c20-8 52-8 72 0 10 4 12 14 10 30 2 20 0 40-6 52-18 8-56 8-74 0-8-14-10-34-8-52-2-16-4-26 6-30z" fill="#b9d63a" stroke="#1a1a1a" stroke-width="5" stroke-linejoin="round"/>
+    <circle cx="94" cy="88" r="11" fill="#fff" stroke="#1a1a1a" stroke-width="4"/><circle cx="96" cy="90" r="5" fill="#1a1a1a"/>
+    <circle cx="124" cy="88" r="11" fill="#fff" stroke="#1a1a1a" stroke-width="4"/><circle cx="126" cy="90" r="5" fill="#1a1a1a"/>
+    <path d="M88 70q6-5 12 0M118 70q6-5 12 0" fill="none" stroke="#1a1a1a" stroke-width="4" stroke-linecap="round"/>
+    <path d="M100 106q9 7 18 0" fill="none" stroke="#1a1a1a" stroke-width="4" stroke-linecap="round"/>
+    <path d="M104 116v22l18-11z" fill="#fff6e8" stroke="#1a1a1a" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M152 100c8-6 14-14 14-24M166 76l6-10M160 70l2-12M154 74l-4-10" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>
+    <path d="M90 148l-8 22M128 148l6 22" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>
+    <path d="M64 170h26l2 9H62z" fill="#f08a4b" stroke="#1a1a1a" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M126 170h26l2 9h-30z" fill="#f08a4b" stroke="#1a1a1a" stroke-width="4" stroke-linejoin="round"/>
+  </svg>`;
 }
 function bindGo(root = app) {
   root.querySelectorAll('[data-go]').forEach((el) => el.addEventListener('click', () => (location.hash = `#/watch/${el.dataset.go}`)));
@@ -163,36 +246,71 @@ document.addEventListener('drop', (e) => {
 async function renderHome() {
   const [{ videos }] = await Promise.all([api(`/api/trending?${U()}`), refreshState()]);
   const m = state.info.metrics;
+  const g = state.info.user.grade;
+  const sorters = {
+    helpful: (a, b) => b.quality.score - a.quality.score,
+    views: (a, b) => b.stats.views - a.stats.views,
+    short: (a, b) => a.duration - b.duration,
+  };
+  const sortKey = sessionStorage.getItem('cr-sort') || 'helpful';
   app.innerHTML = `
-    <section class="hero">
-      <h1>Stuck on a concept?<br/>Watch it explained.</h1>
-      <p>Search any high school topic. If another learner already made a video for it, you watch it free. Confused at one moment? Select it and get a bespoke explainer just for that part.</p>
-      <form class="searchbar" id="search-form">
-        <input id="q" placeholder="e.g. how do plants make food from sunlight" autocomplete="off" autofocus />
-        <button class="btn big">Find videos</button>
-      </form>
-      <div class="photo-row">
-        <button class="btn ghost" id="photo-btn" type="button">📷 Snap or upload a page</button>
-        <span class="hint">A textbook page, a diagram, a screenshot or your handwritten notes. You can also paste or drop an image here.</span>
+    <section class="hero" aria-labelledby="hero-h">
+      <div class="hero-main">
+        <span class="badge-pill">Big questions. Small videos.</span>
+        <h1 id="hero-h">Your next “I get it!” starts here.</h1>
+        <p class="lede">Explore a topic, watch an explanation, and ask about the part that’s tricky.</p>
+        <form class="searchbar" id="search-form" role="search">
+          <label for="q" class="field-label">What would you like to understand?</label>
+          <div class="search-row">
+            <input id="q" placeholder="Try “How do plants make food from sunlight?”" autocomplete="off" />
+            <button class="btn primary big">Find videos</button>
+          </div>
+        </form>
+        <div class="photo-row">
+          <span class="field-label">Have a question on paper?</span>
+          <button class="btn outline" id="photo-btn" type="button">Upload a page</button>
+        </div>
+        <p class="hint">Textbook, diagram or notes · You can also paste an image.</p>
       </div>
+      <div class="hero-art">
+        <div class="mascot-disc">${mascot()}</div>
+        <div class="tagline-card">Small videos. Big lightbulb energy.</div>
+      </div>
+    </section>
+    <section aria-labelledby="topics-h">
+      <h2 id="topics-h" class="label-h">Try a topic</h2>
       <div class="chips">
-        ${['Photosynthesis', "Newton's laws", 'Why the French Revolution started', 'Mitosis phases', 'Pythagoras theorem', 'Supply and demand', 'The Krebs cycle']
-          .map((c) => `<button class="chip" data-q="${esc(c)}">${esc(c)}</button>`).join('')}
+        ${[['Photosynthesis', 'Photosynthesis'], ["Newton's laws", "Newton's laws"], ['French Revolution', 'Why the French Revolution started'], ['Mitosis', 'Mitosis phases'], ['Pythagoras', 'Pythagoras theorem'], ['Supply and demand', 'Supply and demand'], ['Krebs cycle', 'The Krebs cycle']]
+          .map(([l, q]) => `<button class="chip" data-q="${esc(q)}">${esc(l)}</button>`).join('')}
       </div>
     </section>
-    <section class="impact">
-      <div class="stat"><b>${m.videos}</b><span>concept videos in the shared library</span></div>
-      <div class="stat"><b>${m.reuseCount}</b><span>times a saved video was reused</span></div>
-      <div class="stat"><b>${m.tokensSaved}</b><span>tokens saved by reuse instead of regenerating</span></div>
-      <div class="stat"><b>${m.explainers}</b><span>bespoke "explain this part" deep dives</span></div>
+    <section aria-labelledby="lib-h">
+      <div class="lib-head">
+        <div><h2 id="lib-h">Find your next lightbulb moment</h2>
+        <p class="sub">${g ? `For ${g === 'K' ? 'Kindergarten' : `Grade ${esc(g)}`} · ` : ''}Includes earlier-grade refreshers · Free to watch</p></div>
+        <label class="sort"><span class="sr">Sort lessons</span><select id="sort">
+          <option value="helpful" ${sortKey === 'helpful' ? 'selected' : ''}>Most helpful first</option>
+          <option value="views" ${sortKey === 'views' ? 'selected' : ''}>Most watched</option>
+          <option value="short" ${sortKey === 'short' ? 'selected' : ''}>Shortest first</option></select></label>
+      </div>
+      <div class="grid" id="lib">${[...videos].sort(sorters[sortKey]).map(videoCard).join('')}</div>
     </section>
-    <h2>Most helpful right now</h2>
-    <p class="sub">Ranked by how well other learners did on the check-in quiz, how many finished, likes, and how rarely they got stuck.</p>
-    <div class="grid">${videos.map(videoCard).join('')}</div>`;
+    <section class="together" aria-labelledby="tog-h">
+      <h2 id="tog-h">Better when we learn together</h2>
+      <div class="tog-stats">
+        <div><b>${m.videos}</b><span>concept videos</span></div>
+        <div><b>${m.reuseCount}</b><span>saved videos reused</span></div>
+        <div><b>${m.tokensSaved}</b><span>tokens saved by reusing</span></div>
+        <div><b>${m.explainers}</b><span>“explain this part” deep dives</span></div>
+      </div>
+    </section>`;
   $('#search-form').addEventListener('submit', (e) => { e.preventDefault(); const q = $('#q').value.trim(); if (q) location.hash = `#/search?q=${encodeURIComponent(q)}`; });
   app.querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', () => (location.hash = `#/search?q=${encodeURIComponent(b.dataset.q)}`)));
   $('#photo-btn').addEventListener('click', photoPicker);
-  bindGo();
+  $('#sort').addEventListener('change', (e) => {
+    sessionStorage.setItem('cr-sort', e.target.value);
+    $('#lib').innerHTML = [...videos].sort(sorters[e.target.value]).map(videoCard).join('');
+  });
 }
 
 // ---------- Search ----------
@@ -208,7 +326,7 @@ async function renderSearch(q, photoId) {
   if (data.blocked) {
     app.innerHTML = `
     <form class="searchbar" id="search-form" style="margin:0 0 6px;max-width:none">
-      <input id="q" value="" placeholder="Try another concept" /><button class="btn">Search</button>
+      <input id="q" value="" placeholder="Try another concept" aria-label="Search for a concept" /><button class="btn">Search</button>
     </form>
     <div class="banner warn">🛡️ ${esc(data.blocked)}</div>`;
     $('#search-form').addEventListener('submit', (e) => { e.preventDefault(); const nq = $('#q').value.trim(); if (nq) location.hash = `#/search?q=${encodeURIComponent(nq)}`; });
@@ -216,7 +334,7 @@ async function renderSearch(q, photoId) {
   }
   app.innerHTML = `
     <form class="searchbar" id="search-form" style="margin:0 0 6px;max-width:none">
-      <input id="q" value="${esc(q)}" /><button class="btn">Search</button>
+      <input id="q" value="${esc(q)}" aria-label="Search for a concept" /><button class="btn">Search</button>
     </form>
     ${photo ? `<div class="photo-card">
       <img src="${esc(photo.imageUrl)}" alt="Your photo" />
@@ -338,86 +456,154 @@ async function renderWatch(id) {
   const confused = v.stats.confusedScenes || {};
   const maxConf = Math.max(1, ...Object.values(confused));
 
+  const u0 = state.info.user;
+  const userBand = u0.gradeBand || '';
+  const refresher = userBand && v.gradeBand && v.gradeBand !== userBand && v.gradeBand < userBand ? ` refresher for Grade ${esc(u0.grade)}` : '';
+  const nCp = v.scenes.filter((s) => s.checkpoint).length;
+  const savedKey = `cr-saved-${state.user}`;
+  const isSaved = () => (JSON.parse(localStorage.getItem(savedKey) || '[]')).includes(id);
+  const short = (h) => (h.length > 16 ? h.split(/[\s:,]+/).slice(0, 2).join(' ') : h);
+  const ideas = (v.conceptMap?.edges || []).filter((e) => e.r !== 'related to' && e.r !== 'is a').slice(0, 3);
   app.innerHTML = `
-    <div class="crumbs"><a href="#/">Home</a> › ${data.parent ? `<a href="#/watch/${data.parent.id}">${esc(data.parent.title)}</a> › Deep dive` : esc(v.subject)}</div>
-    <div class="watch">
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="#/">Explore</a> / ${data.parent ? `<a href="#/watch/${data.parent.id}">${esc(data.parent.title)}</a> / <span aria-current="page">Deep dive</span>` : `<span>${esc(v.subject)}</span> / <span aria-current="page">${esc(v.title)}</span>`}</nav>
+    <div class="lesson-head">
       <div>
-        <div class="stage" id="stage">
-          <div class="scene-num" id="scene-num"></div>
-          <div class="heading" id="heading"></div>
-          <div class="visual" id="visual"></div>
-          <div class="caption" id="caption"></div>
-          <div class="overlay" id="overlay"><button class="playbig" id="playbig" aria-label="Play">▶</button></div>
-          <div class="checkpoint" id="cp" hidden></div>
-        </div>
-        <div class="controls">
-          <button class="iconbtn" id="pp" aria-label="Play or pause">▶</button>
-          <div class="timeline" id="timeline">
-            <div class="segs">${durs.map((d, i) => `<div class="seg" style="flex:${d}" title="${esc(v.scenes[i].heading)}"><div class="heat" style="opacity:${((confused[i] || 0) / maxConf) * 0.75}"></div></div>`).join('')}</div>
+        <h1>${esc(v.title)}</h1>
+        <div class="lesson-meta">${esc(v.subject)} · Grades ${esc(gradeRange(v.gradeBand))}${refresher} · ${Math.round(total)} seconds${nCp ? ` · ${nCp} checkpoint${nCp === 1 ? '' : 's'}` : ''}</div>
+      </div>
+      <div class="lesson-actions">${mascot('small')}<button class="btn lime" id="save-btn" aria-pressed="${isSaved()}">${isSaved() ? 'Saved ✓' : 'Save lesson'}</button></div>
+    </div>
+    <div class="watch">
+      <div class="watch-main">
+        <section class="player" aria-label="Lesson video">
+          <div class="stage" id="stage">
+            <div class="scene-num" id="scene-num"></div>
+            <div class="heading" id="heading" aria-live="polite"></div>
+            <div class="visual" id="visual"></div>
+            <div class="caption" id="caption"></div>
+            <div class="overlay" id="overlay"><button class="playbig" id="playbig" aria-label="Play lesson">▶</button></div>
+            <div class="checkpoint" id="cp" role="dialog" aria-label="Checkpoint question" hidden></div>
+          </div>
+          <div class="timeline" id="timeline" role="slider" tabindex="0" aria-label="Lesson position" aria-valuemin="0" aria-valuemax="${Math.round(total)}" aria-valuenow="0" aria-valuetext="0:00 of ${fmt(total)}">
+            <div class="segs">${durs.map((d, i) => `<div class="seg" style="flex:${d}" title="${esc(v.scenes[i].heading)}"><div class="heat" style="opacity:${((confused[i] || 0) / maxConf) * 0.85}"></div></div>`).join('')}</div>
             <div class="played" id="played"></div>
             <div class="sel" id="sel" hidden></div>
             <div class="head" id="head"></div>
           </div>
-          <span class="time" id="time">0:00 / ${fmt(total)}</span>
-          <button class="iconbtn" id="mute" aria-label="Toggle narration">🔊</button>
-        </div>
-        <div class="tl-legend"><span>Drag across the timeline to select the part you didn't get.</span><span><i></i>where other learners got stuck</span></div>
-        <div class="explain-box" id="explain-box">
-          <div class="row">
-            <span>🤔 Didn't get <b id="ex-label">this part</b>?</span>
-            ${data.freeTextQuestions ? '<input id="ex-q" placeholder="Optional: what confused you?" />' : '<input id="ex-q" type="hidden" value="" />'}
-            <button class="btn" id="ex-btn">Explain this part · ${state.info.cost.explainer} tokens</button>
+          <div class="controls">
+            <button class="ctl" id="pp" aria-label="Play">▶ Play</button>
+            <span class="time" id="time">0:00 / ${fmt(total)}</span>
+            <button class="ctl" id="cc" aria-pressed="true">CC on</button>
+            <button class="ctl" id="speed" aria-label="Playback speed 1×">Speed 1×</button>
+            <button class="ctl" id="mute" aria-pressed="true">Sound on</button>
+            <button class="ctl" id="fs">Full screen</button>
           </div>
-          <div class="hint" id="ex-hint" style="margin-top:6px">If another learner already asked about this part, you'll get their deep dive free.</div>
-        </div>
+        </section>
+        <div class="tl-legend"><span>Drag across the bar to select the part you didn't get.</span><span><i></i>where other learners got stuck</span></div>
+        <section class="card jump" aria-labelledby="jump-h">
+          <h2 id="jump-h">Jump to a scene</h2>
+          <div class="jump-row">${v.scenes.map((s, i) => `<button class="jbtn" data-jump="${i}">${i + 1} · ${esc(short(s.heading))} <span>${fmt(starts[i])}</span></button>`).join('')}</div>
+        </section>
+        <section class="explain-box" id="explain-box" aria-labelledby="ex-h">
+          <h2 id="ex-h">A tricky part? Let’s work through it.</h2>
+          <p class="hint">Choose a time range. You can use these fields instead of dragging. <span class="ex-now">Now: <b id="ex-label">this part</b></span></p>
+          <div class="ex-fields">
+            <label>From<input id="ex-from" inputmode="numeric" value="0:00" /></label>
+            <label>To<input id="ex-to" inputmode="numeric" value="0:00" /></label>
+            ${data.freeTextQuestions ? '<label class="grow">What confused you? (optional)<input id="ex-q" placeholder="e.g. Which part is the hardest?" /></label>' : '<input id="ex-q" type="hidden" value="" />'}
+          </div>
+          <div class="ex-row">
+            <button class="btn primary" id="ex-btn">Explain this part · ${state.info.cost.explainer} tokens</button>
+            <span class="ex-cost" id="ex-cost" aria-live="polite"></span>
+          </div>
+          <p class="hint" id="ex-hint">Your explanation joins the library so other learners can use it too.</p>
+        </section>
         ${data.canGoDeeper ? '' : `<div class="banner info">🧭 ${v.depth ? "You've gone as deep as this lesson goes! Want to try a related topic?" : ''}</div>`}
-        <div class="v-info">
-          <div>
-            <h1>${esc(v.title)}</h1>
-            <div class="vmeta"><span>${esc(v.subject)} · Grades ${esc(v.gradeBand)}</span>${v.scenes.some((s) => s.checkpoint) ? `<span>✅ ${v.scenes.filter((s) => s.checkpoint).length} checkpoints</span>` : ''}<span>${v.stats.views} views</span><span>made by ${esc(v.createdBy)}</span></div>
-          </div>
-          <div class="reactions">
-            <button id="like">👍 <span>${v.stats.likes}</span></button>
-            <button id="dislike">👎 <span>${v.stats.dislikes}</span></button>
-          </div>
+        <div class="alt-row">
+          <button class="btn outline wide" id="tr-btn" aria-expanded="false" aria-controls="transcript">Read transcript</button>
+          <button class="btn outline wide" id="ad-btn" aria-pressed="false">Audio description</button>
+          <span class="hint">Learn your way. Pause or replay anytime.</span>
         </div>
+        <section class="card transcript" id="transcript" hidden aria-label="Transcript">
+          ${v.scenes.map((s, i) => `<p><b>${fmt(starts[i])} · ${esc(s.heading)}.</b> ${esc(s.narration)}</p>`).join('')}
+        </section>
         <div id="quiz-slot"></div>
-      </div>
-      <aside class="side">
-        ${v.sourceImage ? `<div class="panel"><h3>Made from a learner's photo</h3><a href="${esc(v.sourceImage)}" target="_blank" rel="noopener"><img class="src-img" src="${esc(v.sourceImage)}" alt="The photo this video was made from" /></a></div>` : ''}
-        <div class="panel">
-          <h3>Why it ranks here</h3>
-          <div class="hint" style="margin:-4px 0 8px">How it helped other learners</div>
-          <div class="breakdown">
-            ${[['Quiz accuracy', v.quality.breakdown.quiz], ['Finish rate', v.quality.breakdown.completion], ['Liked', v.quality.breakdown.likes], ['Clarity', v.quality.breakdown.clarity]]
-              .map(([k, n]) => `<span>${k}</span><div class="qbar"><div style="width:${n}%"></div></div><b>${n}</b>`).join('')}
+        <div class="lesson-foot">
+          <div><div>${v.stats.views} views · Made by ${v.createdBy === 'community' ? 'the community' : esc(v.createdBy)}</div><div class="hint">${state.info.cost.video} tokens saved by reusing this lesson</div></div>
+          <div class="reactions">
+            <button class="btn outline" id="like" aria-pressed="false">Helpful · <span>${v.stats.likes}</span></button>
+            <button class="btn outline" id="dislike" aria-pressed="false">Not helpful · <span>${v.stats.dislikes}</span></button>
           </div>
-          <div style="margin-top:8px;font-weight:700">${v.quality.confident ? `Helpfulness score: <span class="qpill ${qClass(v.quality.score)}">${v.quality.score}</span>` : 'New video: the score firms up as learners watch, rate and take the quiz.'}</div>
         </div>
-        ${v.conceptMap && v.conceptMap.nodes.length >= 3 ? `<div class="panel"><h3>Concept map</h3><div class="hint" style="margin:-4px 0 6px">Knowledge graph built from this video's transcript (POS tagging: nouns become concepts, verbs become links). Search matches against it.</div>${conceptMapSvg(v.conceptMap)}</div>` : ''}
-        <div class="panel">
-          <h3>Deep dives other learners asked for</h3>
-          ${data.explainers.length ? data.explainers.map((x) => `<div class="mini" data-go="${x.id}"><div class="vthumb">🔎</div><div><div class="t">${esc(v.scenes[x.parentScene]?.heading || x.title)}</div><div class="m">at ${fmt(starts[x.parentScene] || 0)} · ${x.stats.views} views</div></div></div>`).join('') : '<div class="empty">None yet. Be the first to ask about a confusing part.</div>'}
-        </div>
-        <div class="panel">
-          <h3>Other versions, ranked by learners</h3>
-          ${data.alternatives.length ? data.alternatives.map((x) => `<div class="mini" data-go="${x.id}"><div class="vthumb">${esc(x.emoji || SUBJECT_EMOJI[x.subject] || '🎬')}</div><div><div class="t">${esc(x.title)}</div><div class="m">${qPill(x.quality)} · ${esc(x.style || '')} · ${fmt(x.duration)}</div></div></div>`).join('') : '<div class="empty">This is the only version so far.</div>'}
-        </div>
+      </div>
+      <aside class="side" aria-label="About this lesson">
+        <section class="panel">
+          <h2>Your learning path</h2>
+          <p class="hint">One idea. ${['', 'One small step', 'Two small steps', 'Three small steps', 'Four small steps', 'Five small steps', 'Six small steps'][v.scenes.length] || `${v.scenes.length} small steps`}.</p>
+          <ol class="path" id="path">${v.scenes.map((s, i) => `<li><button data-jump="${i}"><span class="pn">${String(i + 1).padStart(2, '0')}</span><span><span class="pt">${esc(s.heading)}</span><span class="pm" data-pm="${i}">${fmt(starts[i])}–${fmt(starts[i] + durs[i])}</span></span></button></li>`).join('')}</ol>
+        </section>
+        ${v.sourceImage ? `<section class="panel"><h2>Made from a learner's photo</h2><a href="${esc(v.sourceImage)}" target="_blank" rel="noopener"><img class="src-img" src="${esc(v.sourceImage)}" alt="The photo this video was made from" /></a></section>` : ''}
+        ${v.conceptMap && v.conceptMap.nodes.length >= 3 ? `<section class="panel mint">
+          <h2>Connect the ideas</h2>
+          <p class="hint">A text-first concept map</p>
+          ${ideas.length ? `<ul class="ideas">${ideas.map((e) => `<li><b>${esc(e.s)}</b> ${esc(e.r)} <b>${esc(e.o)}</b>.</li>`).join('')}</ul>` : ''}
+          <p class="ideas-key">Key ideas: ${v.conceptMap.nodes.slice(0, 6).map(esc).join(', ')}.</p>
+          <details><summary>Show as a map</summary>${conceptMapSvg(v.conceptMap)}</details>
+        </section>` : ''}
+        <section class="panel">
+          <h2>How this helped learners</h2>
+          <p class="score">${v.quality.confident ? `Helpfulness score: ${v.quality.score} / 100` : 'New lesson: the score firms up as learners watch and answer.'}</p>
+          <dl class="breakdown">
+            ${[['Quiz accuracy', v.quality.breakdown.quiz], ['Finish rate', v.quality.breakdown.completion], ['Liked', v.quality.breakdown.likes], ['Clarity', v.quality.breakdown.clarity]]
+              .map(([k, n]) => `<dt>${k}</dt><dd>${n}</dd>`).join('')}
+          </dl>
+        </section>
+        <section class="panel">
+          <h2>More explanations</h2>
+          ${data.explainers.length ? data.explainers.map((x) => `<a class="mini" href="#/watch/${x.id}">${thumb(x)}<span><span class="t">${esc(v.scenes[x.parentScene]?.heading || x.title)}</span><span class="m">Deep dive at ${fmt(starts[x.parentScene] || 0)} · ${x.stats.views} views</span></span></a>`).join('') : '<p class="empty">No deep dives yet. Yours could help someone!</p>'}
+          ${data.alternatives.length ? data.alternatives.map((x) => `<a class="mini" href="#/watch/${x.id}">${thumb(x)}<span><span class="t">${esc(x.title)}</span><span class="m">Helpfulness ${x.quality.score}/100 · ${fmt(x.duration)}</span></span></a>`).join('') : '<p class="empty">This is the only version so far.</p>'}
+        </section>
       </aside>
     </div>`;
   bindGo();
+  $('#save-btn').addEventListener('click', () => {
+    const list = JSON.parse(localStorage.getItem(savedKey) || '[]');
+    const next = isSaved() ? list.filter((x) => x !== id) : [...list, id];
+    localStorage.setItem(savedKey, JSON.stringify(next));
+    $('#save-btn').textContent = isSaved() ? 'Saved ✓' : 'Save lesson';
+    $('#save-btn').setAttribute('aria-pressed', isSaved());
+    toast(isSaved() ? 'Lesson saved.' : 'Removed from saved lessons.');
+  });
+  $('#tr-btn').addEventListener('click', () => {
+    const t = $('#transcript'); t.hidden = !t.hidden;
+    $('#tr-btn').setAttribute('aria-expanded', !t.hidden);
+    $('#tr-btn').textContent = t.hidden ? 'Read transcript' : 'Hide transcript';
+  });
 
   api(`/api/videos/${id}/event`, { body: { type: 'view' } }).then((r) => renderTokens(r.user)).catch(() => {});
 
-  const p = (player = { t: 0, playing: false, scene: -1, muted: localStorage.getItem('cr-muted') === '1', sel: null, completed: false, last: 0, speaking: false, cpDone: {} });
-  $('#mute').textContent = p.muted ? '🔇' : '🔊';
+  const p = (player = { t: 0, playing: false, scene: -1, muted: localStorage.getItem('cr-muted') === '1', sel: null, completed: false, last: 0, speaking: false, cpDone: {}, speed: 1, cc: true, ad: false });
+  const setMute = () => { $('#mute').textContent = p.muted ? 'Sound off' : 'Sound on'; $('#mute').setAttribute('aria-pressed', String(!p.muted)); };
+  setMute();
+  // Audio description: also read out what is on screen.
+  const describe = (vis) => {
+    if (!vis) return '';
+    if (vis.kind === 'icons') return `On screen: ${(vis.items || []).map((x) => x.t).join(', ')}.`;
+    if (vis.kind === 'flow') return `On screen, a flow: ${(vis.steps || []).join(', then ')}.`;
+    if (vis.kind === 'equation') return `On screen, the equation ${vis.text}.`;
+    if (vis.kind === 'compare') return `On screen, a comparison of ${vis.left?.h || ''} and ${vis.right?.h || ''}.`;
+    if (vis.kind === 'timeline') return `On screen, a timeline: ${(vis.events || []).map((e) => `${e.y}, ${e.t}`).join('; ')}.`;
+    if (vis.kind === 'keywords') return `On screen: ${(vis.words || []).join(', ')}.`;
+    return vis.caption ? `On screen: ${vis.caption}.` : '';
+  };
 
+  const tl = $('#timeline');
   const sceneAt = (t) => { let i = 0; while (i < starts.length - 1 && t >= starts[i + 1]) i++; return i; };
   function speak(text) {
     if (p.muted || !('speechSynthesis' in window)) return;
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.rate = 1.02;
+    u.rate = 1.02 * p.speed;
     const voice = speechSynthesis.getVoices().find((vv) => /en(-|_)/i.test(vv.lang) && /Google|Natural|Samantha|Daniel/i.test(vv.name)) || speechSynthesis.getVoices().find((vv) => /^en/i.test(vv.lang));
     if (voice) u.voice = voice;
     p.speaking = true;
@@ -433,17 +619,26 @@ async function renderWatch(id) {
     $('#visual').innerHTML = renderVisual(s.visual);
     $('#caption').textContent = s.narration;
     if (!p.sel) setSelection(starts[i], starts[i] + durs[i], false);
-    if (narrate) speak(s.narration);
+    if (narrate) speak(p.ad ? `${describe(s.visual)} ${s.narration}` : s.narration);
+    document.querySelectorAll('#path li').forEach((li, k) => {
+      li.classList.toggle('now', k === i);
+      const pm = li.querySelector('.pm');
+      pm.textContent = `${k === i ? 'Now · ' : k === i + 1 ? 'Next · ' : ''}${fmt(starts[k])}–${fmt(starts[k] + durs[k])}`;
+      li.querySelector('button').setAttribute('aria-current', k === i ? 'step' : 'false');
+    });
+    document.querySelectorAll('.jbtn').forEach((b, k) => b.classList.toggle('on', k === i));
   }
   function draw() {
     const pct = (p.t / total) * 100;
     $('#played').style.width = `${pct}%`;
     $('#head').style.left = `calc(${pct}% - 1px)`;
     $('#time').textContent = `${fmt(p.t)} / ${fmt(total)}`;
+    tl.setAttribute('aria-valuenow', Math.round(p.t));
+    tl.setAttribute('aria-valuetext', `${fmt(p.t)} of ${fmt(total)}, scene ${sceneAt(p.t) + 1}`);
   }
   function tick(now) {
     if (!p.playing) return;
-    const dt = Math.min(0.25, (now - p.last) / 1000);
+    const dt = Math.min(0.25, (now - p.last) / 1000) * p.speed;
     p.last = now;
     const i = sceneAt(p.t);
     const end = starts[i] + durs[i];
@@ -467,7 +662,7 @@ async function renderWatch(id) {
     if (p.t >= total) p.t = 0;
     p.playing = true;
     $('#overlay').hidden = true;
-    $('#pp').textContent = '❚❚';
+    $('#pp').textContent = '❚❚ Pause'; $('#pp').setAttribute('aria-label', 'Pause');
     const i = sceneAt(p.t);
     p.t = starts[i]; // resume from the start of the scene so narration lines up
     showScene(i, true);
@@ -479,7 +674,7 @@ async function renderWatch(id) {
     cancelAnimationFrame(p.raf);
     if ('speechSynthesis' in window) speechSynthesis.cancel();
     p.speaking = false;
-    $('#pp').textContent = '▶';
+    $('#pp').textContent = '▶ Play'; $('#pp').setAttribute('aria-label', 'Play');
   }
   function finish() {
     pause();
@@ -516,12 +711,15 @@ async function renderWatch(id) {
     const existing = data.explainers.find((x) => x.parentScene === best);
     $('#ex-label').textContent = `${fmt(lo)}–${fmt(hi)} (“${v.scenes[best].heading}”)`;
     $('#ex-label').dataset.scene = best;
+    if (document.activeElement !== $('#ex-from')) $('#ex-from').value = fmt(lo);
+    if (document.activeElement !== $('#ex-to')) $('#ex-to').value = fmt(hi);
+    const bal = state.info.user.balance, cost = state.info.cost.explainer;
+    $('#ex-cost').textContent = existing ? `Free · ${bal} tokens available` : `${bal} tokens available · ${Math.max(0, bal - cost)} after this request`;
     $('#ex-btn').textContent = existing ? 'Watch the deep dive · free' : `Explain this part · ${state.info.cost.explainer} tokens`;
     $('#ex-hint').textContent = existing
       ? `${existing.stats.views || 'Other'} learner${existing.stats.views === 1 ? '' : 's'} already asked about this part, so it's free.`
       : "Nobody has asked about this part yet. You'll get a bespoke deep dive that joins the library for others.";
   }
-  const tl = $('#timeline');
   const tAt = (e) => { const r = tl.getBoundingClientRect(); return ((e.clientX - r.left) / r.width) * total; };
   let dragStart = null;
   tl.addEventListener('pointerdown', (e) => { dragStart = tAt(e); tl.setPointerCapture(e.pointerId); });
@@ -537,7 +735,7 @@ async function renderWatch(id) {
   $('#mute').addEventListener('click', () => {
     p.muted = !p.muted;
     localStorage.setItem('cr-muted', p.muted ? '1' : '0');
-    $('#mute').textContent = p.muted ? '🔇' : '🔊';
+    setMute();
     if (p.muted && 'speechSynthesis' in window) { speechSynthesis.cancel(); p.speaking = false; }
   });
 
@@ -547,8 +745,45 @@ async function renderWatch(id) {
     $('#dislike span').textContent = r.stats.dislikes;
     $('#like').classList.toggle('on', r.reaction === 'like');
     $('#dislike').classList.toggle('on', r.reaction === 'dislike');
+    $('#like').setAttribute('aria-pressed', String(r.reaction === 'like'));
+    $('#dislike').setAttribute('aria-pressed', String(r.reaction === 'dislike'));
   }
   $('#like').addEventListener('click', () => react('like'));
+  $('#cc').addEventListener('click', () => {
+    p.cc = !p.cc; $('#caption').hidden = !p.cc;
+    $('#cc').textContent = p.cc ? 'CC on' : 'CC off'; $('#cc').setAttribute('aria-pressed', String(p.cc));
+  });
+  const SPEEDS = [1, 1.25, 1.5, 0.75];
+  $('#speed').addEventListener('click', () => {
+    p.speed = SPEEDS[(SPEEDS.indexOf(p.speed) + 1) % SPEEDS.length];
+    $('#speed').textContent = `Speed ${p.speed}×`; $('#speed').setAttribute('aria-label', `Playback speed ${p.speed}×`);
+  });
+  $('#fs').addEventListener('click', () => {
+    const el = $('.player');
+    if (document.fullscreenElement) document.exitFullscreen(); else if (el.requestFullscreen) el.requestFullscreen();
+  });
+  $('#ad-btn').addEventListener('click', () => {
+    p.ad = !p.ad; $('#ad-btn').setAttribute('aria-pressed', String(p.ad));
+    $('#ad-btn').textContent = p.ad ? 'Audio description on' : 'Audio description';
+    toast(p.ad ? 'Audio description on: narration also describes what is on screen.' : 'Audio description off.');
+  });
+  document.querySelectorAll('[data-jump]').forEach((b) => b.addEventListener('click', () => {
+    const k = Number(b.dataset.jump); p.sel = null; $('#sel').hidden = true;
+    if (p.playing) { p.t = starts[k]; showScene(k, true); draw(); } else seek(starts[k], false);
+  }));
+  const parseT = (str) => { const m = String(str).trim().match(/^(\d+)(?::(\d{1,2}))?$/); return m ? (m[2] != null ? Number(m[1]) * 60 + Number(m[2]) : Number(m[1])) : null; };
+  ['#ex-from', '#ex-to'].forEach((sel) => $(sel).addEventListener('change', () => {
+    const a = parseT($('#ex-from').value), b = parseT($('#ex-to').value);
+    if (a == null || b == null || a === b) { toast('Use minutes:seconds, like 0:10, and make “To” later than “From”.'); return; }
+    setSelection(a, b, true);
+  }));
+  tl.addEventListener('keydown', (e) => {
+    const step = { ArrowRight: 5, ArrowUp: 5, ArrowLeft: -5, ArrowDown: -5 }[e.key];
+    if (step) { e.preventDefault(); seek(p.t + step, p.playing); }
+    else if (e.key === 'Home') { e.preventDefault(); seek(0, p.playing); }
+    else if (e.key === 'End') { e.preventDefault(); seek(total - 0.5, p.playing); }
+    else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); p.playing ? pause() : play(); }
+  });
   $('#dislike').addEventListener('click', () => react('dislike'));
 
   $('#ex-btn').addEventListener('click', async () => {

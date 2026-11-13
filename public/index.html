@@ -3,16 +3,24 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ConceptReel</title>
+  <title>Snapsense</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700&display=swap" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
+  <a class="skip" href="#main">Skip to content</a>
   <header class="topbar">
-    <a class="brand" href="#/"><span class="logo">▶</span> ConceptReel</a>
+    <a class="brand" href="#/" aria-label="Snapsense home"><span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M7 4.5v15l12.5-7.5z" fill="currentColor"/></svg></span>Snapsense</a>
+    <nav class="mainnav" aria-label="Main">
+      <a class="navbtn on" id="nav-explore" aria-current="page" href="#/">Explore</a>
+      <button class="navbtn" id="nav-how" type="button">How it works</button>
+    </nav>
     <div class="topbar-right">
-      <div class="tokens" id="tokens" title="Weekly token budget">
+      <div class="tokens" id="tokens" role="group" aria-label="Weekly token budget">
         <div class="tokens-label"><span id="tokens-num">–</span> tokens left</div>
-        <div class="meter"><div class="meter-fill" id="tokens-bar"></div></div>
+        <div class="meter" aria-hidden="true"><div class="meter-fill" id="tokens-bar"></div></div>
         <div class="tokens-sub" id="tokens-sub"></div>
       </div>
       <label class="user-pick">
@@ -21,9 +29,10 @@
       </label>
     </div>
   </header>
-  <main id="app"></main>
-  <div id="toast" class="toast" hidden></div>
-  <div id="modal" class="modal" hidden><div class="modal-card" id="modal-card"></div></div>
+  <section class="gradebar" id="gradebar" aria-labelledby="gradebar-h" hidden></section>
+  <main id="main" tabindex="-1"><div id="app"></div></main>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <div id="modal" class="modal" hidden><div class="modal-card" id="modal-card" role="dialog" aria-modal="true"></div></div>
   <script src="/app.js"></script>
 </body>
 </html>
